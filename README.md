@@ -1,5 +1,7 @@
 # Dynspec Python Suite (Current Working Version)
 
+Note: for the separate batch-processing layer, see [`workflow_batch/README.md`](workflow_batch/README.md).
+
 This directory contains the working Python tools for building and plotting dynamical spectra:
 
 - `ts2ima.py` (time x wavelength image)
