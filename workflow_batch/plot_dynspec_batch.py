@@ -37,7 +37,7 @@ INPUT_FILES: list[str] = []
 # Optional glob-based selection (used only when INPUT_FILES is empty).
 # Example:
 # INPUT_GLOBS = ["*FeII5469*.fits", "*FeII6318*.fits"]
-INPUT_GLOBS: list[str] = ['*5018*.fits']
+INPUT_GLOBS: list[str] = ['*6678*.fits']
 
 # Only image-like dynspec outputs are plotted by default.
 ALLOWED_PREFIXES = ("ts2ima__", "ts2vima__", "ts2phima__", "ts2vphima__", "ts2cov__")
@@ -58,8 +58,8 @@ NAN_ALPHA = 1.0
 # Color-scale pairs. These lists must have the same length.
 # Each (VMIN_LIST[i], VMAX_LIST[i]) pair creates one output plot per FITS file.
 # Use None for auto-limits.
-VMIN_LIST: list[float | None] = [0.78007]#[0.9695]
-VMAX_LIST: list[float | None] = [None]
+VMIN_LIST: list[float | None] = [0.895]#[0.78007]#[0.9695]
+VMAX_LIST: list[float | None] = [1.01]
 
 
 # ---------------------------------------------------------------------------

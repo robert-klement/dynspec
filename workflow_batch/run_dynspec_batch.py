@@ -30,13 +30,13 @@ from spectral_line_catalog import wavelength_for  # noqa: E402
 # User configuration (edit this block)
 # ---------------------------------------------------------------------------
 
-LIST_FILE = PROJECT_ROOT / "spectra_UVES.list"
+LIST_FILE = PROJECT_ROOT / "spectra_CHIRON.list"
 OUTPUT_DIR = PROJECT_ROOT / "workflow_batch" / "outputs"
 
 # Any subset of:
 #   ts2ima, ts2vima, ts2phima, ts2vphima, ts2tab, ts2vtab, ts2cov
 MODES = [
-    "ts2vima",
+    # "ts2vima",
     "ts2vphima",
     # "ts2ima",
     # "ts2phima",
@@ -47,8 +47,9 @@ MODES = [
 
 # Use names or aliases from spectral_line_catalog.py
 LINE_NAMES = [
-    "FeII 5018",
-    "FeII 5469",
+    "HeI 6678",
+    # "FeII 5018",
+    # "FeII 5469",
 ]
 
 # Wavelength-region controls
@@ -56,13 +57,13 @@ WAVE_HALF_WIDTH_A = 15.0
 LAMSTEP_A = 0.1  # coarse by default for fast workflow
 
 # Velocity-region controls
-VLO_KMS = -400.0
-VHI_KMS = 400.0
-VSTEP_KMS = 1  # coarse by default for fast workflow
+VLO_KMS = -600.0
+VHI_KMS = 600.0
+VSTEP_KMS = 5  # coarse by default for fast workflow
 
 # Time/phase controls
-TSTEP_D = 1
-PHSTEP = 0.05
+TSTEP_D = 5
+PHSTEP =  0.0625 # 1/16 in phase, coarse by default for fast workflow
 OVERLAP_PERCENT = 0.0
 
 # Multiple orbital solutions for phase modes
