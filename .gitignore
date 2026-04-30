@@ -2,3 +2,13 @@ rivi_sources_c/
 __pycache__/
 .codex
 .vscode/
+.claude/
+outputs/
+CLAUDE.md
+spectra_ALL.list
+spectra_BESOS.list
+spectra_BESS.list
+spectra_CHIRON.list
+spectra_UVES.list
+spectra_XSHOOTER.list
+spectral_line_catalog_reference.txt

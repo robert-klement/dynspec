@@ -23,6 +23,7 @@ from typing import Tuple
 
 import numpy as np
 from astropy.io import fits
+from scipy.ndimage import gaussian_filter1d
 
 
 def axis_from_header(hdr: fits.Header, axis: int, n: int) -> np.ndarray:
@@ -36,23 +37,6 @@ def axis_from_header(hdr: fits.Header, axis: int, n: int) -> np.ndarray:
     return crval + (pix_fits - crpix) * cdelt
 
 
-def page_inches(page: str, orientation: str) -> Tuple[float, float]:
-    """
-    Return figure size in inches for the requested page and orientation.
-    """
-    page = page.lower()
-    orientation = orientation.lower()
-
-    if page == "a4":
-        w, h = 8.27, 11.69
-    else:
-        w, h = 8.5, 11.0
-
-    if orientation == "landscape":
-        w, h = h, w
-
-    return w, h
-
 
 def label_from_ctype(ctype: str, cunit: str, axis: int) -> str:
     """
@@ -63,7 +47,7 @@ def label_from_ctype(ctype: str, cunit: str, axis: int) -> str:
 
     if axis == 1:
         if "VELO" in ctype_u:
-            return "Velocity (km/s)" if unit else "Velocity"
+            return "RV (km/s)" if unit else "Velocity"
         if "WAVE" in ctype_u or "LAMB" in ctype_u:
             return f"Wavelength ({unit})" if unit else "Wavelength"
         return f"X ({ctype})" if ctype else "X"
@@ -100,6 +84,19 @@ def tile_phase_for_plot(img: np.ndarray, y: np.ndarray, lo: float = -0.5, hi: fl
     return np.vstack(chunks_img), np.concatenate(chunks_y), True
 
 
+def gauss_filter_x(img: np.ndarray, fwhm_pix: float) -> np.ndarray:
+    """NaN-aware Gaussian filter along the x-axis (wavelength direction, axis=1)."""
+    sigma = fwhm_pix / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+    nan_mask = ~np.isfinite(img)
+    filled = np.where(nan_mask, 0.0, img)
+    weight = np.where(nan_mask, 0.0, 1.0)
+    smooth = gaussian_filter1d(filled, sigma, axis=1)
+    wsmooth = gaussian_filter1d(weight, sigma, axis=1)
+    result = np.where(wsmooth > 0, smooth / wsmooth, np.nan)
+    result[nan_mask] = np.nan
+    return result
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Plot a dynamical spectrum FITS with fixed page size."
@@ -107,13 +104,14 @@ def main(argv=None) -> int:
     ap.add_argument("input_fits", type=Path, help="Input FITS (2D image).")
     ap.add_argument("output", type=Path, help="Output plot (.pdf, .png, etc.).")
 
-    # Page/layout controls
-    ap.add_argument("--page", choices=["letter", "a4"], default="letter",
-                    help="Page size. Default=letter.")
-    ap.add_argument("--orientation", choices=["portrait", "landscape"], default="landscape",
-                    help="Page orientation. Default=landscape.")
+    # Figure size / layout controls
+    ap.add_argument("--figsize", type=float, nargs=2, metavar=("WIDTH", "HEIGHT"),
+                    default=[5.0, 4.0],
+                    help="Figure width and height in inches. Default=5 4.")
     ap.add_argument("--dpi", type=int, default=200,
                     help="DPI for raster output (PNG). Default=200.")
+    ap.add_argument("--fontsize", type=float, default=7.0,
+                    help="Base font size in points (scales title, labels, ticks). Default=7.")
 
     # Color/display controls
     ap.add_argument("--cmap", default="viridis",
@@ -131,6 +129,21 @@ def main(argv=None) -> int:
     ap.add_argument("--nan-alpha", type=float, default=1.0,
                     help="Alpha for NaN pixels (0=transparent). Default=1.")
 
+    # Gaussian smoothing in wavelength direction
+    ap.add_argument("--gauss-fwhm", type=float, default=None,
+                    help="FWHM of Gaussian smoothing kernel along wavelength axis, in Angstroms.")
+
+    # Phase display range
+    ap.add_argument("--phase-lo", type=float, default=-0.5,
+                    help="Lower phase limit for phase plots. Default=-0.5.")
+    ap.add_argument("--phase-hi", type=float, default=1.5,
+                    help="Upper phase limit for phase plots. Default=1.5.")
+
+    # Label visibility
+    ap.add_argument("--hide-xlabel", action="store_true", help="Hide x-axis label.")
+    ap.add_argument("--hide-ylabel", action="store_true", help="Hide y-axis label.")
+    ap.add_argument("--hide-cbar-label", action="store_true", help="Hide colorbar label.")
+
     # Diagnostics / cosmetics
     ap.add_argument("--title", default=None,
                     help="Optional plot title. Default: input FITS filename.")
@@ -141,6 +154,8 @@ def main(argv=None) -> int:
 
     import matplotlib.pyplot as plt
     import matplotlib.colors as colors
+
+    plt.rcParams["font.size"] = args.fontsize
 
     with fits.open(args.input_fits, memmap=False) as hdul:
         img = np.asarray(hdul[0].data, dtype=float)
@@ -155,13 +170,28 @@ def main(argv=None) -> int:
     is_phase = "PHASE" in str(hdr.get("CTYPE2", "")).strip().upper()
     phase_default_view = False
     if is_phase:
-        img, y, phase_default_view = tile_phase_for_plot(img, y, lo=-0.5, hi=1.5)
+        img, y, phase_default_view = tile_phase_for_plot(img, y, lo=args.phase_lo, hi=args.phase_hi)
         ny, nx = img.shape
 
     xlab = label_from_ctype(hdr.get("CTYPE1", ""), hdr.get("CUNIT1", ""), axis=1)
     ylab = label_from_ctype(hdr.get("CTYPE2", ""), hdr.get("CUNIT2", ""), axis=2)
 
+    if args.gauss_fwhm is not None:
+        cdelt1 = abs(float(hdr.get("CDELT1", 1.0)))
+        xmode = str(hdr.get("XMODE", hdr.get("CTYPE1", ""))).strip().upper()
+        if "VELO" in xmode or xmode == "VELOCITY":
+            lamc = float(hdr.get("LAMC", 0.0))
+            if lamc <= 0.0:
+                raise SystemExit("--gauss-fwhm requires LAMC in the FITS header for velocity-axis files")
+            C_KMS = 299792.458
+            fwhm_pix = (args.gauss_fwhm / lamc) * C_KMS / cdelt1
+        else:
+            fwhm_pix = args.gauss_fwhm / cdelt1
+        img = gauss_filter_x(img, fwhm_pix)
+
     if args.info:
+        if args.gauss_fwhm is not None:
+            print(f"Gaussian smoothing: FWHM={args.gauss_fwhm} AA ({fwhm_pix:.2f} pix)")
         finite = np.isfinite(img)
         finite_rows = int(np.sum(np.any(finite, axis=1)))
         finite_frac = float(np.mean(finite))
@@ -198,8 +228,7 @@ def main(argv=None) -> int:
     if args.info:
         print(f"Display scale: vmin={vmin:.6g}, vmax={vmax:.6g}")
 
-    # Fixed page-sized figure
-    w_in, h_in = page_inches(args.page, args.orientation)
+    w_in, h_in = args.figsize
     fig, ax = plt.subplots(figsize=(w_in, h_in), constrained_layout=True)
 
     # Make NaNs visible
@@ -232,16 +261,29 @@ def main(argv=None) -> int:
             vmax=vmax,
         )
 
-    ax.set_xlabel(xlab)
-    ax.set_ylabel(ylab)
-    ax.set_title(args.title if args.title is not None else args.input_fits.name)
+    if not args.hide_xlabel:
+        ax.set_xlabel(xlab)
+    if not args.hide_ylabel:
+        ax.set_ylabel(ylab)
+    if args.title:
+        ax.set_title(args.title, fontsize=7)
     if phase_default_view:
-        ax.set_ylim(-0.5, 1.5)
+        ax.set_ylim(args.phase_lo, args.phase_hi)
 
-    cbar = fig.colorbar(im, ax=ax, shrink=0.9)
-    cbar.set_label("Flux")
+    # Inward ticks on all four sides (no secondary axes, which confuse constrained_layout)
+    ax.minorticks_on()
+    ax.tick_params(which="both", top=True, right=True, direction="in", color="white")
 
-    fig.savefig(args.output, dpi=args.dpi, bbox_inches="tight", pad_inches=0.1)
+    cbar = fig.colorbar(im, ax=ax, location="top")
+    if not args.hide_cbar_label:
+        cbar.set_label("Flux")
+    cbar_ticks = np.linspace(vmin, vmax, 3)
+    cbar.set_ticks(cbar_ticks)
+    cbar.set_ticklabels([f"{t:.3f}" for t in cbar_ticks])
+    cbar.ax.tick_params(which="both", direction="in")
+
+    # Do not use bbox_inches="tight" — it conflicts with constrained_layout
+    fig.savefig(args.output, dpi=args.dpi)
     plt.close(fig)
     return 0
 
